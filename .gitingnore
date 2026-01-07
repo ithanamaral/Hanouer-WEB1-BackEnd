@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+
+# Arquivos do banco de dados local
+*.db
+*.log
+
+# Pastas de configuração do VS Code e Sistema
+.vscode/
+.DS_Store
+Thumbs.db

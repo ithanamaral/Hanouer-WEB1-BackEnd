@@ -61,12 +61,10 @@ class UserCreate(BaseModel):
 
 @app.post("/signup")
 def signup(user: UserCreate, db: Session = Depends(get_db)):
-    # 1. Verifica se o e-mail já está cadastrado
     usuario_existente = db.query(models.Usuario).filter(models.Usuario.email == user.email).first()
     if usuario_existente:
         raise HTTPException(status_code=400, detail="Este e-mail já está cadastrado.")
 
-    # 2. Cria o novo usuário (usando os nomes de colunas atuais: name e password)
     novo_usuario = models.Usuario(
         name=user.name,
         email=user.email,
@@ -76,7 +74,7 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
 
     try:
         db.add(novo_usuario)
-        db.commit() # Salva no db.sqlite
+        db.commit() 
         db.refresh(novo_usuario)
         return {"status": "success", "message": "Usuário criado com sucesso!"}
     except Exception as e:
@@ -85,5 +83,5 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     
 
 # Executa o servidor
-if __name__ == "__main__":
+if _name_ == "_main_":
     uvicorn.run(app, host="0.0.0.0", port=8000)
