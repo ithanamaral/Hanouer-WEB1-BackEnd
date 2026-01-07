@@ -1,14 +1,14 @@
 -- database: ./db.sqlite
 CREATE TABLE usuarios(
-    "nome" TEXT,
+    "name" TEXT,
     "CPF" TEXT NOT NULL UNIQUE PRIMARY KEY,
     "email" TEXT NOT NULL UNIQUE ,
-    "senha" TEXT NOT NULL);
+    "password" TEXT NOT NULL);
 
 CREATE TABLE pedidos(
-    "ID_Pedido" INTEGER NOT NULL UNIQUE PRIMARY KEY,
-    "Data_Pedido" TEXT NOT NULL,
-    "Valor_Total" REAL NOT NULL,
+    "id_pedido" INTEGER NOT NULL UNIQUE PRIMARY KEY,
+    "data_pedido" TEXT NOT NULL,
+    "valor_total" REAL NOT NULL,
     
     "CPF_fk_Usuario" TEXT NOT NULL,
     FOREIGN KEY("CPF_fk_Usuario") 
@@ -17,27 +17,27 @@ CREATE TABLE pedidos(
 );
 
 CREATE TABLE produtos(
-    "ID_Produto" INTEGER NOT NULL UNIQUE PRIMARY KEY,
-    "Nome" TEXT NOT NULL,
-    "Preco" REAL NOT NULL);
+    "id_produto" INTEGER NOT NULL UNIQUE PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "preco" REAL NOT NULL);
 
 CREATE TABLE serviços(  
-    "ID_Serviço" INTEGER NOT NULL UNIQUE PRIMARY KEY,
-    "Nome" TEXT NOT NULL,
-    "Preco" REAL NOT NULL);
+    "id_serviço" INTEGER NOT NULL UNIQUE PRIMARY KEY,
+    "name" TEXT NOT NULL,
+    "preco" REAL NOT NULL);
 
 
 CREATE TABLE Item_Pedido_Serviço(
     "Quantidade" INTEGER,
     "Preço_unitário" REAL,
-    "ID_item" PRIMARY KEY,
-    "ID_fk_Pedido" INTEGER NOT NULL,
-    "ID_fk_Serviço" INTEGER NOT NULL,
-    FOREIGN KEY("ID_fk_Pedido") 
-        REFERENCES pedidos("ID_Pedido")
+    "id_item" PRIMARY KEY,
+    "id_fk_pedido" INTEGER NOT NULL,
+    "id_fk_serviço" INTEGER NOT NULL,
+    FOREIGN KEY("id_fk_pedido") 
+        REFERENCES pedidos("id_pedido")
         ON DELETE CASCADE,
-    FOREIGN KEY("ID_fk_Serviço") 
-        REFERENCES serviços("ID_Serviço")
+    FOREIGN KEY("id_fk_serviço") 
+        REFERENCES serviços("id_serviço")
         ON DELETE CASCADE
 );
 
@@ -45,26 +45,26 @@ CREATE TABLE Item_Pedido_Serviço(
 CREATE TABLE Item_Pedido_Produto(
     "Quantidade" INTEGER,
     "Preço_unitário" REAL,
-    "ID_item" PRIMARY KEY,
-    "ID_fk_Pedido" INTEGER NOT NULL,
-    "ID_fk_Produto" INTEGER NOT NULL,
-    FOREIGN KEY("ID_fk_Pedido") 
-        REFERENCES pedidos("ID_Pedido")
+    "id_item" PRIMARY KEY,
+    "id_fk_pedido" INTEGER NOT NULL,
+    "id_fk_produto" INTEGER NOT NULL,
+    FOREIGN KEY("id_fk_pedido") 
+        REFERENCES pedidos("id_pedido")
         ON DELETE CASCADE,
-    FOREIGN KEY("ID_fk_Produto") 
-        REFERENCES produtos("ID_Produto")
+    FOREIGN KEY("id_fk_produto") 
+        REFERENCES produtos("id_produto")
         ON DELETE CASCADE
 );
 
 -- Add dados de teste
-INSERT INTO usuarios (nome, CPF, email, senha) VALUES ('Alice Silva', '12345678901', 'alice.silva@example.com', 'senha123');
-INSERT INTO pedidos(ID_Pedido, Data_Pedido, Valor_Total, CPF_fk_Usuario) VALUES (1, '2024-06-01', 150.00, '12345678901');
-INSERT INTO produtos (ID_Produto, Nome, Preco) VALUES (1, 'Camiseta', 50.00);
-INSERT INTO Item_Pedido_Produto (ID_fk_Pedido, ID_fk_Produto, Quantidade, Preço_unitário)
+INSERT INTO usuarios (name, CPF, email, password) VALUES ('Alice Silva', '12345678901', 'alice.silva@example.com', 'senha123');
+INSERT INTO pedidos(id_pedido, data_pedido, valor_total, CPF_fk_Usuario) VALUES (1, '2024-06-01', 150.00, '12345678901');
+INSERT INTO produtos (id_produto, name, preco) VALUES (1, 'Camiseta', 50.00);
+INSERT INTO Item_Pedido_Produto (id_fk_pedido, id_fk_produto, quantidade, preço_unitário)
 VALUES (1, 1, 1, 50.00);
 -- Não vai add por que não existe
-INSERT INTO Item_Pedido_Produto (ID_fk_Pedido, ID_fk_Produto, Quantidade, Preço_unitário)
+INSERT INTO Item_Pedido_Produto (id_fk_pedido, id_fk_produto, quantidade, preço_unitário)
 VALUES (2, 2, 1, 50.00);
 
 
-INSERT INTO usuarios (nome, CPF, email, senha) VALUES ('Íthan P. Amaral', '10781629640', 'ithanamaral@gmail.com', 'senha123');
+INSERT INTO usuarios (name, CPF, email, password) VALUES ('Íthan P. Amaral', '10781629640', 'ithanamaral@gmail.com', 'senha123');
