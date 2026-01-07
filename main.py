@@ -83,5 +83,5 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
     
 
 # Executa o servidor
-if _name_ == "_main_":
+if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
