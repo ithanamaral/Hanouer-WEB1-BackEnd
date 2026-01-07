@@ -16,6 +16,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+#Loguin
 # Modelo que o FastAPI espera receber do React
 class LoginSchema(BaseModel):
     email: str
@@ -46,5 +48,42 @@ def listar_produtos():
         {"id": 2, "nome": "Tigela Premium", "preco": 25.00}
     ]
 
+
+
+#CADASTRO
+
+# Modelo que o FastAPI espera receber do React
+class UserCreate(BaseModel):
+    name: str
+    email: str
+    cpf: str
+    password: str
+
+@app.post("/signup")
+def signup(user: UserCreate, db: Session = Depends(get_db)):
+    # 1. Verifica se o e-mail já está cadastrado
+    usuario_existente = db.query(models.Usuario).filter(models.Usuario.email == user.email).first()
+    if usuario_existente:
+        raise HTTPException(status_code=400, detail="Este e-mail já está cadastrado.")
+
+    # 2. Cria o novo usuário (usando os nomes de colunas atuais: name e password)
+    novo_usuario = models.Usuario(
+        name=user.name,
+        email=user.email,
+        cpf=user.cpf,
+        password=user.password 
+    )
+
+    try:
+        db.add(novo_usuario)
+        db.commit() # Salva no db.sqlite
+        db.refresh(novo_usuario)
+        return {"status": "success", "message": "Usuário criado com sucesso!"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Erro ao salvar no banco de dados.")
+    
+
+# Executa o servidor
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
