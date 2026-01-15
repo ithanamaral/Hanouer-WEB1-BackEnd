@@ -28,12 +28,10 @@ def login(user: LoginSchema, db: Session = Depends(get_db)):
     # 1. Busca no SQLite
     usuario = db.query(models.Usuario).filter(models.Usuario.email == user.email).first()
     
-    # Debug no terminal
     if not usuario:
         print(f"ERRO: Usuário {user.email} não encontrado.")
         raise HTTPException(status_code=401, detail="E-mail ou senha incorretos")
 
-    # 2. Comparação (Garantindo que a coluna no banco é .password)
     if usuario.password == user.password:
         print(f"SUCESSO: {usuario.email} logado.")
         return {"status": "success", "message": "Login realizado!", "user": usuario.email}
@@ -52,7 +50,6 @@ def listar_produtos():
 
 #CADASTRO
 
-# Modelo que o FastAPI espera receber do React
 class UserCreate(BaseModel):
     name: str
     email: str
@@ -82,6 +79,5 @@ def signup(user: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Erro ao salvar no banco de dados.")
     
 
-# Executa o servidor
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
