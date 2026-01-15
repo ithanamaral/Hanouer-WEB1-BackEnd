@@ -11,7 +11,7 @@ install:
 	pip install fastapi uvicorn sqlalchemy pymysql
 
 # Comando principal para rodar a API
-run:
+start:
 	$(PYTHON) -m uvicorn main:app --reload --host 0.0.0.0 --port $(PORT)
 
 # Comando para limpar arquivos temporários do Python (opcional)

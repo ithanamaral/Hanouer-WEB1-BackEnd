@@ -3,9 +3,9 @@ from database import Base
 
 class Usuario(Base):
     __tablename__ = "usuarios"
-    cpf = Column(String, primary_key=True, index=True) 
-    email = Column(String, unique=True, index=True)
-    password = Column(String)
+    cpf = Column("CPF", String, primary_key=True)
+    email = Column(String)
+    password = Column(String) 
     name = Column(String)
 
 class Serviços(Base):
