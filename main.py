@@ -1,125 +1,246 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, func
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session, relationship
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
-from database import get_db, engine
-import models
-import uvicorn
+from typing import List
+from datetime import datetime
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
-# Cria as tabelas no banco caso elas não existam
-models.Base.metadata.create_all(bind=engine)
+# --- CONFIGURAÇÃO DO BANCO DE DADOS (SQLite) ---
+# Cria um arquivo 'loja.db' na mesma pasta
+SQLALCHEMY_DATABASE_URL = "sqlite:///./db.sqlite"
 
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# --- MODELOS (TABELAS) ---
+class Usuario(Base):
+    __tablename__ = "usuarios"
+    cpf = Column("CPF", String, primary_key=True, index=True)
+    nome = Column("name", String)
+    email = Column("email", String, unique=True)
+    senha = Column("password", String)
+
+class Produto(Base):
+    __tablename__ = "produtos"
+    id = Column("id_produto", Integer, primary_key=True, index=True)
+    name = Column("name", String)
+    preco = Column("preco", Float)
+
+class Servico(Base):
+    __tablename__ = "serviços"
+    id = Column("id_serviço", Integer, primary_key=True, index=True)
+    name = Column("name", String)
+    preco = Column("preco", Float)
+
+class Pedido(Base):
+    __tablename__ = "pedidos"
+
+    id = Column("id_pedido", Integer, primary_key=True, index=True)
+    cpf_usuario = Column("CPF_fk_Usuario", String, ForeignKey("usuarios.CPF"))
+    data_pedido = Column("data_pedido", String)
+    valor_total = Column("valor_total", Float)
+
+    # Relacionamento com itens
+    itens = relationship("ItemPedido", back_populates="pedido")
+    itens_servico = relationship("ItemPedidoServico", back_populates="pedido")
+
+class ItemPedido(Base):
+    __tablename__ = "Item_Pedido_Produto"
+
+    id = Column("id_item", Integer, primary_key=True, index=True)
+    pedido_id = Column("id_fk_pedido", Integer, ForeignKey("pedidos.id_pedido"))
+    produto_id = Column("id_fk_produto", Integer)
+    quantidade = Column("Quantidade", Integer)
+    preco_unitario = Column("Preço_unitário", Float)
+
+    pedido = relationship("Pedido", back_populates="itens")
+
+class ItemPedidoServico(Base):
+    __tablename__ = "Item_Pedido_Serviço"
+
+    id = Column("id_item", Integer, primary_key=True, index=True)
+    pedido_id = Column("id_fk_pedido", Integer, ForeignKey("pedidos.id_pedido"))
+    servico_id = Column("id_fk_serviço", Integer)
+    quantidade = Column("Quantidade", Integer)
+    preco_unitario = Column("Preço_unitário", Float)
+
+    pedido = relationship("Pedido", back_populates="itens_servico")
+
+# Cria as tabelas no banco de dados automaticamente
+Base.metadata.create_all(bind=engine)
+
+# --- APP FASTAPI ---
 app = FastAPI()
 
-# CORS
+# Configuração de CORS para permitir requisições do Front End
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["*"],  # Em produção, especifique a URL do front (ex: http://localhost:5173)
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], 
-    allow_headers=["*"], 
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# --- SCHEMAS (Regras de Entrada de Dados) ---
+# Dependência para pegar a sessão do banco
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-class LoginSchema(BaseModel):
-    email: str
-    password: str
+# --- SCHEMAS (DADOS RECEBIDOS DO FRONT) ---
+class ItemCarrinho(BaseModel):
+    id: int
+    quantidade: int
+    preco: float
 
-class UserCreate(BaseModel):
+class PedidoSchema(BaseModel):
+    cpf_usuario: str
+    itens: List[ItemCarrinho]
+
+class UsuarioCreate(BaseModel):
     name: str
-    email: str
     cpf: str
-    password: str
-
-class UserUpdate(BaseModel):
-    name: str
     email: str
     password: str
 
-# --- ROTAS DE AUTENTICAÇÃO ---
+class UsuarioLogin(BaseModel):
+    email: str
+    password: str
 
-@app.post("/login")
-def login(user: LoginSchema, db: Session = Depends(get_db)):
-    usuario = db.query(models.Usuario).filter(models.Usuario.email == user.email).first()
+# --- FUNÇÃO DE ENVIO DE EMAIL ---
+def enviar_email_confirmacao(destinatario: str, id_pedido: int, valor: float):
+    # CONFIGURAÇÕES DO GMAIL (Necessário criar Senha de App se usar 2FA)
+    # Se não souber gerar, pesquise: "Como criar senha de app Gmail"
+    remetente = "seu_email@gmail.com"
+    senha = "sua_senha_de_app" 
+
+    assunto = f"Pedido #{id_pedido} Confirmado - Hanouer"
+    corpo = f"""
+    Olá!
     
-    if not usuario:
-        raise HTTPException(status_code=401, detail="E-mail ou senha incorretos")
-
-    if usuario.password == user.password:
-        return {
-            "status": "success", 
-            "message": "Login realizado!", 
-            "user_email": usuario.email,
-            "user_cpf": usuario.cpf 
-        }
+    Seu pedido #{id_pedido} foi recebido com sucesso.
+    Valor Total: R$ {valor:.2f}
     
-    raise HTTPException(status_code=401, detail="E-mail ou senha incorretos")
+    Obrigado por comprar na Hanouer!
+    """
 
-@app.post("/signup")
-def signup(user: UserCreate, db: Session = Depends(get_db)):
-    if db.query(models.Usuario).filter(models.Usuario.email == user.email).first():
-        raise HTTPException(status_code=400, detail="Este e-mail já está cadastrado.")
-    
-    if db.query(models.Usuario).filter(models.Usuario.cpf == user.cpf).first():
-        raise HTTPException(status_code=400, detail="Este CPF já está cadastrado.")
-
-    novo_usuario = models.Usuario(
-        name=user.name,
-        email=user.email,
-        cpf=user.cpf,
-        password=user.password 
-    )
+    msg = MIMEMultipart()
+    msg['From'] = remetente
+    msg['To'] = destinatario
+    msg['Subject'] = assunto
+    msg.attach(MIMEText(corpo, 'plain'))
 
     try:
-        db.add(novo_usuario)
-        db.commit()
-        db.refresh(novo_usuario)
-        return {"status": "success", "message": "Usuário criado com sucesso!"}
-    except Exception:
-        db.rollback()
-        raise HTTPException(status_code=500, detail="Erro ao salvar no banco de dados.")
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(remetente, senha)
+        server.sendmail(remetente, destinatario, msg.as_string())
+        server.quit()
+        print(f"Email enviado para {destinatario}")
+    except Exception as e:
+        print(f"Erro ao enviar email: {e}")
 
-
-
-# --- ROTAS DE PERFIL (CRUD) ---
-@app.get("/perfil/{user_cpf}")
-def get_perfil(user_cpf: str, db: Session = Depends(get_db)):
-    usuario = db.query(models.Usuario).filter(models.Usuario.cpf == user_cpf).first()
-    
+# --- ROTAS ---
+@app.post("/finalizar-pedido")
+def finalizar_pedido(dados: PedidoSchema, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    # Verifica se o usuário existe no banco para evitar erro de servidor (500)
+    usuario = db.query(Usuario).filter(Usuario.cpf == dados.cpf_usuario).first()
     if not usuario:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    
-    return {
-        "name": usuario.name,
-        "email": usuario.email,
-        "password": usuario.password,
-        "cpf": usuario.cpf
-    }
+        raise HTTPException(status_code=404, detail="Usuário não encontrado. Faça login novamente.")
 
-@app.put("/perfil/update/{user_cpf}")
-def update_perfil(user_cpf: str, data: UserUpdate, db: Session = Depends(get_db)):
-    usuario = db.query(models.Usuario).filter(models.Usuario.cpf == user_cpf).first()
-    
-    if not usuario:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
-    
-    usuario.name = data.name
-    usuario.email = data.email
-    usuario.password = data.password
+    # 1. Calcula o total
+    valor_total = sum(item.quantidade * item.preco for item in dados.itens)
+    data_atual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 2. Cria o Pedido
+    # Gera ID manualmente para garantir que o pedido seja salvo corretamente
+    max_id_pedido = db.query(func.max(Pedido.id)).scalar() or 0
+
+    novo_pedido = Pedido(
+        id=max_id_pedido + 1,
+        cpf_usuario=dados.cpf_usuario,
+        data_pedido=data_atual,
+        valor_total=valor_total
+    )
+    db.add(novo_pedido)
+    db.commit()
+    db.refresh(novo_pedido)
+
+    # 3. Salva os Itens do Pedido
+    # Busca o maior ID atual para incrementar manualmente (caso o banco não esteja como AUTOINCREMENT)
+    max_id_prod = db.query(func.max(ItemPedido.id)).scalar() or 0
+    max_id_serv = db.query(func.max(ItemPedidoServico.id)).scalar() or 0
+
+    for item in dados.itens:
+        # Verifica se é produto
+        produto = db.query(Produto).filter(Produto.id == item.id).first()
+        if produto:
+            max_id_prod += 1
+            novo_item = ItemPedido(
+                id=max_id_prod,
+                pedido_id=novo_pedido.id,
+                produto_id=item.id,
+                quantidade=item.quantidade,
+                preco_unitario=item.preco
+            )
+            db.add(novo_item)
+        else:
+            # Assume que é serviço
+            max_id_serv += 1
+            novo_item_serv = ItemPedidoServico(
+                id=max_id_serv,
+                pedido_id=novo_pedido.id,
+                servico_id=item.id,
+                quantidade=item.quantidade,
+                preco_unitario=item.preco
+            )
+            db.add(novo_item_serv)
     
     db.commit()
-    return {"status": "success", "message": "Perfil atualizado com sucesso!"}
 
+    # Envia email em segundo plano (não trava a resposta para o usuário)
+    background_tasks.add_task(enviar_email_confirmacao, usuario.email, novo_pedido.id, valor_total)
 
+    return {"status": "sucesso", "pedido_id": novo_pedido.id}
 
-# --- ROTAS DE PRODUTOS ---
-@app.get("/produtos")
-def listar_produtos():
-    return [
-        {"id": 1, "nome": "Biscoitinho Hanouer", "preco": 150.00},
-        {"id": 2, "nome": "Tigela Premium", "preco": 25.00}
-    ]
+@app.get("/usuario/{cpf}")
+def get_usuario(cpf: str, db: Session = Depends(get_db)):
+    user = db.query(Usuario).filter(Usuario.cpf == cpf).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    return {"cpf": user.cpf, "name": user.nome, "email": user.email, "password": user.senha}
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.post("/signup")
+def cadastrar_usuario(usuario: UsuarioCreate, db: Session = Depends(get_db)):
+    db_user = db.query(Usuario).filter(Usuario.cpf == usuario.cpf).first()
+    if db_user:
+        raise HTTPException(status_code=400, detail="CPF já cadastrado")
+
+    db_email = db.query(Usuario).filter(Usuario.email == usuario.email).first()
+    if db_email:
+        raise HTTPException(status_code=400, detail="Email já cadastrado")
+
+    novo_usuario = Usuario(nome=usuario.name, cpf=usuario.cpf, email=usuario.email, senha=usuario.password)
+    db.add(novo_usuario)
+    db.commit()
+    db.refresh(novo_usuario)
+    return {"status": "sucesso", "usuario_cpf": novo_usuario.cpf}
+
+@app.post("/login")
+def login(dados: UsuarioLogin, db: Session = Depends(get_db)):
+    user = db.query(Usuario).filter(Usuario.email == dados.email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    if user.senha != dados.password:
+        raise HTTPException(status_code=401, detail="Senha incorreta")
+    return {"status": "sucesso", "user_cpf": user.cpf, "user_name": user.nome, "user_email": user.email, "token": "dummy-token"}
