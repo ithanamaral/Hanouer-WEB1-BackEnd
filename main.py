@@ -11,7 +11,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 # --- CONFIGURAÇÃO DO BANCO DE DADOS (SQLite) ---
-# Cria um arquivo 'loja.db' na mesma pasta
+# Cria um arquivo 'db.sqlite' na mesma pasta
 SQLALCHEMY_DATABASE_URL = "sqlite:///./db.sqlite"
 
 engine = create_engine(
@@ -33,12 +33,16 @@ class Produto(Base):
     id = Column("id_produto", Integer, primary_key=True, index=True)
     name = Column("name", String)
     preco = Column("preco", Float)
+    categoria = Column("categoria", String, default="Produtos")
+    imagem = Column("imagem", String) # Ex: "biscoitinho.png"
 
 class Servico(Base):
     __tablename__ = "serviços"
     id = Column("id_serviço", Integer, primary_key=True, index=True)
     name = Column("name", String)
     preco = Column("preco", Float)
+    categoria = Column("categoria", String, default="Serviços")
+    imagem = Column("imagem", String)
 
 class Pedido(Base):
     __tablename__ = "pedidos"
@@ -58,6 +62,7 @@ class ItemPedido(Base):
     id = Column("id_item", Integer, primary_key=True, index=True)
     pedido_id = Column("id_fk_pedido", Integer, ForeignKey("pedidos.id_pedido"))
     produto_id = Column("id_fk_produto", Integer)
+    nome_produto = Column("nome_produto", String)
     quantidade = Column("Quantidade", Integer)
     preco_unitario = Column("Preço_unitário", Float)
 
@@ -69,6 +74,7 @@ class ItemPedidoServico(Base):
     id = Column("id_item", Integer, primary_key=True, index=True)
     pedido_id = Column("id_fk_pedido", Integer, ForeignKey("pedidos.id_pedido"))
     servico_id = Column("id_fk_serviço", Integer)
+    nome_servico = Column("nome_servico", String)
     quantidade = Column("Quantidade", Integer)
     preco_unitario = Column("Preço_unitário", Float)
 
@@ -97,6 +103,39 @@ def get_db():
     finally:
         db.close()
 
+# --- POPULAR BANCO AO INICIAR (SE ESTIVER VAZIO) ---
+@app.on_event("startup")
+def startup_populate_db():
+    db = SessionLocal()
+    if db.query(Produto).count() == 0 and db.query(Servico).count() == 0:
+        print("Populando banco de dados com itens iniciais...")
+        
+        # Produtos (IDs 1-9)
+        produtos_iniciais = [
+            Produto(id=1, name="Biscoitinho", preco=80.0, categoria="Produtos", imagem="biscoitinho.png"),
+            Produto(id=2, name="bolinha", preco=50.0, categoria="Produtos", imagem="bolinha-cachorro.jpg"),
+            Produto(id=3, name="Brinquedo de gato", preco=50.0, categoria="Produtos", imagem="brinquedo-gato.jpg"),
+            Produto(id=4, name="cama", preco=120.0, categoria="Produtos", imagem="caminha-pet.jpg"),
+            Produto(id=5, name="coleira", preco=70.0, categoria="Produtos", imagem="coleira.jpg"),
+            Produto(id=6, name="produtos para banho", preco=160.0, categoria="Produtos", imagem="item-banho.png"),
+            Produto(id=7, name="ração de cachorro", preco=120.0, categoria="Produtos", imagem="racao-dog.jpg"),
+            Produto(id=8, name="ração de gato", preco=120.0, categoria="Produtos", imagem="racao-gato.jpg"),
+            Produto(id=9, name="tijela", preco=30.0, categoria="Produtos", imagem="tijela.png"),
+        ]
+        
+        # Serviços (IDs 10-13)
+        servicos_iniciais = [
+            Servico(id=10, name="adestramento", preco=300.0, categoria="Serviços", imagem="adestramento.jpg"),
+            Servico(id=11, name="banho e tosa", preco=150.0, categoria="Serviços", imagem="banho.jpg"),
+            Servico(id=12, name="táxi dog", preco=100.0, categoria="Serviços", imagem="taxi-dog.jpg"),
+            Servico(id=13, name="tosa", preco=120.0, categoria="Serviços", imagem="tosa.jpg"),
+        ]
+        
+        db.add_all(produtos_iniciais)
+        db.add_all(servicos_iniciais)
+        db.commit()
+    db.close()
+
 # --- SCHEMAS (DADOS RECEBIDOS DO FRONT) ---
 class ItemCarrinho(BaseModel):
     id: int
@@ -114,6 +153,11 @@ class UsuarioCreate(BaseModel):
     password: str
 
 class UsuarioLogin(BaseModel):
+    email: str
+    password: str
+
+class UsuarioUpdate(BaseModel):
+    name: str
     email: str
     password: str
 
@@ -151,6 +195,22 @@ def enviar_email_confirmacao(destinatario: str, id_pedido: int, valor: float):
         print(f"Erro ao enviar email: {e}")
 
 # --- ROTAS ---
+@app.get("/itens")
+def listar_itens(db: Session = Depends(get_db)):
+    produtos = db.query(Produto).all()
+    servicos = db.query(Servico).all()
+    
+    lista_completa = []
+    
+    for p in produtos:
+        # Convertendo para dicionário e garantindo formato compatível com o front
+        lista_completa.append({"id": p.id, "nome": [p.name], "preco": p.preco, "categoria": p.categoria, "imagem": p.imagem})
+        
+    for s in servicos:
+        lista_completa.append({"id": s.id, "nome": [s.name], "preco": s.preco, "categoria": s.categoria, "imagem": s.imagem})
+        
+    return lista_completa
+
 @app.post("/finalizar-pedido")
 def finalizar_pedido(dados: PedidoSchema, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     # Verifica se o usuário existe no banco para evitar erro de servidor (500)
@@ -190,21 +250,25 @@ def finalizar_pedido(dados: PedidoSchema, background_tasks: BackgroundTasks, db:
                 id=max_id_prod,
                 pedido_id=novo_pedido.id,
                 produto_id=item.id,
+                nome_produto=produto.name,
                 quantidade=item.quantidade,
                 preco_unitario=item.preco
             )
             db.add(novo_item)
         else:
-            # Assume que é serviço
-            max_id_serv += 1
-            novo_item_serv = ItemPedidoServico(
-                id=max_id_serv,
-                pedido_id=novo_pedido.id,
-                servico_id=item.id,
-                quantidade=item.quantidade,
-                preco_unitario=item.preco
-            )
-            db.add(novo_item_serv)
+            # Busca o serviço para pegar o nome
+            servico = db.query(Servico).filter(Servico.id == item.id).first()
+            if servico:
+                max_id_serv += 1
+                novo_item_serv = ItemPedidoServico(
+                    id=max_id_serv,
+                    pedido_id=novo_pedido.id,
+                    servico_id=item.id,
+                    nome_servico=servico.name,
+                    quantidade=item.quantidade,
+                    preco_unitario=item.preco
+                )
+                db.add(novo_item_serv)
     
     db.commit()
 
@@ -219,6 +283,25 @@ def get_usuario(cpf: str, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     return {"cpf": user.cpf, "name": user.nome, "email": user.email, "password": user.senha}
+
+@app.put("/usuario/{cpf}")
+def atualizar_usuario(cpf: str, dados: UsuarioUpdate, db: Session = Depends(get_db)):
+    user = db.query(Usuario).filter(Usuario.cpf == cpf).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    
+    # Verifica se o email mudou e se já existe em outro usuário
+    if dados.email != user.email:
+        check_email = db.query(Usuario).filter(Usuario.email == dados.email).first()
+        if check_email:
+            raise HTTPException(status_code=400, detail="Email já cadastrado")
+
+    user.nome = dados.name
+    user.email = dados.email
+    user.senha = dados.password
+    
+    db.commit()
+    return {"status": "sucesso"}
 
 @app.post("/signup")
 def cadastrar_usuario(usuario: UsuarioCreate, db: Session = Depends(get_db)):
