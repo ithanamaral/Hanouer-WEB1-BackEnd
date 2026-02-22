@@ -55,6 +55,7 @@ class Pedido(Base):
     # Relacionamento com itens
     itens = relationship("ItemPedido", back_populates="pedido")
     itens_servico = relationship("ItemPedidoServico", back_populates="pedido")
+    usuario = relationship("Usuario") # Permite acessar dados do usuario a partir do pedido
 
 class ItemPedido(Base):
     __tablename__ = "Item_Pedido_Produto"
@@ -211,6 +212,50 @@ def listar_itens(db: Session = Depends(get_db)):
         
     return lista_completa
 
+@app.get("/admin/pedidos")
+def listar_pedidos_admin(db: Session = Depends(get_db)):
+    pedidos = db.query(Pedido).all()
+    resultado = []
+    
+    for p in pedidos:
+        # Compila itens de produto e serviço em uma lista única para visualização
+        lista_itens = []
+        for item in p.itens:
+            lista_itens.append(f"{item.quantidade}x {item.nome_produto} (R$ {item.preco_unitario})")
+        for serv in p.itens_servico:
+            lista_itens.append(f"{serv.quantidade}x {serv.nome_servico} (R$ {serv.preco_unitario})")
+            
+        resultado.append({
+            "id": p.id,
+            "data": p.data_pedido,
+            "cliente": p.usuario.nome if p.usuario else "Cliente não encontrado",
+            "cpf": p.cpf_usuario,
+            "total": p.valor_total,
+            "detalhes": lista_itens
+        })
+    return resultado
+
+@app.get("/admin/usuarios")
+def listar_usuarios_admin(db: Session = Depends(get_db)):
+    # Retorna apenas dados básicos para o select do admin
+    # Formata explicitamente como dicionário para garantir que o Front End receba as chaves corretas
+    usuarios = db.query(Usuario).all()
+    return [{"CPF": u.cpf, "name": u.nome} for u in usuarios]
+
+@app.delete("/admin/pedido/{id}")
+def deletar_pedido(id: int, db: Session = Depends(get_db)):
+    pedido = db.query(Pedido).filter(Pedido.id == id).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado")
+    
+    # Deletar itens associados (Produtos e Serviços) antes de deletar o pedido
+    db.query(ItemPedido).filter(ItemPedido.pedido_id == id).delete()
+    db.query(ItemPedidoServico).filter(ItemPedidoServico.pedido_id == id).delete()
+    
+    db.delete(pedido)
+    db.commit()
+    return {"status": "sucesso", "mensagem": "Pedido removido"}
+
 @app.post("/finalizar-pedido")
 def finalizar_pedido(dados: PedidoSchema, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     # Verifica se o usuário existe no banco para evitar erro de servidor (500)
@@ -321,6 +366,17 @@ def cadastrar_usuario(usuario: UsuarioCreate, db: Session = Depends(get_db)):
 
 @app.post("/login")
 def login(dados: UsuarioLogin, db: Session = Depends(get_db)):
+    # --- VERIFICAÇÃO DE ADMIN (MOCADO) ---
+    if dados.email == "admin@admin.com" and dados.password == "admin":
+        return {
+            "status": "sucesso", 
+            "user_cpf": "00000000000", 
+            "user_name": "Administrador", 
+            "user_email": "admin@admin.com", 
+            "token": "admin-token-secret",
+            "is_admin": True
+        }
+
     user = db.query(Usuario).filter(Usuario.email == dados.email).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
